@@ -1,4 +1,5 @@
 import os
+import re
 import socket
 import sys
 
@@ -20,18 +21,12 @@ app = Flask(__name__)
 def _configure_cors(flask_app: Flask) -> None:
     raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173")
     explicit = [origin.strip() for origin in raw.split(",") if origin.strip()]
-    allow_vercel = any(".vercel.app" in origin for origin in explicit)
 
-    def origin_ok(origin: str | None) -> bool:
-        if not origin:
-            return False
-        if origin in explicit:
-            return True
-        if allow_vercel and origin.startswith("https://") and origin.endswith(".vercel.app"):
-            return True
-        return False
+    origins: list = list(explicit)
+    # Allow every Vercel deployment URL (preview hashes change on each deploy)
+    origins.append(re.compile(r"https://[\w-]+\.vercel\.app"))
 
-    CORS(flask_app, origins=origin_ok)
+    CORS(flask_app, origins=origins)
 
 
 _configure_cors(app)
