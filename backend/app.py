@@ -16,8 +16,25 @@ load_dotenv()
 
 app = Flask(__name__)
 
-cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173")
-CORS(app, origins=[origin.strip() for origin in cors_origins.split(",")])
+
+def _configure_cors(flask_app: Flask) -> None:
+    raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173")
+    explicit = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    allow_vercel = any(".vercel.app" in origin for origin in explicit)
+
+    def origin_ok(origin: str | None) -> bool:
+        if not origin:
+            return False
+        if origin in explicit:
+            return True
+        if allow_vercel and origin.startswith("https://") and origin.endswith(".vercel.app"):
+            return True
+        return False
+
+    CORS(flask_app, origins=origin_ok)
+
+
+_configure_cors(app)
 
 app.register_blueprint(upload_bp)
 app.register_blueprint(generate_bp)
