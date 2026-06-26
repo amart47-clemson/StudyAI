@@ -1,0 +1,17 @@
+The Science of Spaced Repetition: How Your Brain Learns
+
+Spaced repetition is one of the most powerful techniques in cognitive science. Instead of cramming information in a single marathon session, learners who spread their study across multiple days retain dramatically more — often two to three times as much after a month.
+
+The spacing effect was first documented by psychologist Hermann Ebbinghaus in 1885. He found that memory decay follows a predictable curve: we forget roughly 50% of new information within an hour, and about 70% within a day. However, each time we successfully recall a piece of information, that curve flattens. The memory becomes more durable.
+
+Active recall beats passive review. Reading notes feels productive, but testing yourself — even when you get answers wrong — forces your brain to retrieve information, which strengthens neural pathways. This is why flashcards and practice quizzes outperform highlighting and re-reading.
+
+The optimal review interval depends on how well you know the material. Brand-new concepts should be reviewed within a day. Familiar material can wait a week or more. Modern algorithms, like those used in Anki, adjust intervals automatically based on whether you mark a card as easy or hard.
+
+Interleaving is another underused strategy. Rather than studying one topic exhaustively before moving to the next, mixing related subjects during a session improves your ability to discriminate between concepts and apply knowledge flexibly. A session that alternates between photosynthesis, cellular respiration, and the carbon cycle will build deeper understanding than three separate blocks.
+
+Sleep plays a critical role in consolidation. During slow-wave sleep, the brain replays newly learned information, transferring it from short-term hippocampal storage to long-term cortical networks. Students who sleep after studying consistently outperform those who pull all-nighters, even when total study time is equal.
+
+Metacognition — thinking about your own thinking — separates expert learners from novices. Before answering a quiz question, estimate your confidence. Afterward, reflect on why you were right or wrong. This calibration helps you identify blind spots and focus effort where it matters most.
+
+The takeaway is simple: study smarter, not just longer. Space your reviews, test yourself actively, mix your topics, protect your sleep, and pay attention to what you actually know versus what you only recognize.
