@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { generateContent } from '../api/generate'
 import ChatTab from '../components/ChatTab'
+import ErrorBoundary from '../components/ErrorBoundary'
 import FlashcardsTab from '../components/FlashcardsTab'
 import QuizTab from '../components/QuizTab'
 import SummaryTab from '../components/SummaryTab'
@@ -273,13 +274,15 @@ export default function StudyPage() {
           )}
 
           {activeTab === 'quiz' && (
-            <QuizTab
-              data={cache.quiz}
-              loading={loading.quiz}
-              error={errors.quiz}
-              onStudyWeakTopics={handleStudyWeakTopics}
-              studyWeakLoading={studyWeakLoading}
-            />
+            <ErrorBoundary>
+              <QuizTab
+                data={cache.quiz}
+                loading={loading.quiz}
+                error={errors.quiz}
+                onStudyWeakTopics={handleStudyWeakTopics}
+                studyWeakLoading={studyWeakLoading}
+              />
+            </ErrorBoundary>
           )}
 
           {activeTab === 'chat' && (

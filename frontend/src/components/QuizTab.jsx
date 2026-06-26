@@ -40,10 +40,16 @@ export default function QuizTab({
   const [answers, setAnswers] = useState([])
   const [showResults, setShowResults] = useState(false)
 
-  const questions = useMemo(
-    () => questionOrder.map((i) => sourceQuestions[i]),
-    [questionOrder, sourceQuestions],
-  )
+  const questions = useMemo(() => {
+    if (sourceQuestions.length === 0) return []
+
+    const order =
+      questionOrder.length === sourceQuestions.length
+        ? questionOrder
+        : sourceQuestions.map((_, i) => i)
+
+    return order.map((i) => sourceQuestions[i]).filter(Boolean)
+  }, [questionOrder, sourceQuestions])
 
   useEffect(() => {
     if (sourceQuestions.length > 0) {
@@ -271,6 +277,10 @@ export default function QuizTab({
   const selected = mappedAnswers[currentIndex]
   const isAnswered = selected !== null
   const isLast = currentIndex === questions.length - 1
+
+  if (!current) {
+    return <LoadingPanel type="quiz" />
+  }
 
   return (
     <div className="space-y-5 sm:space-y-6">
