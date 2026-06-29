@@ -74,9 +74,13 @@ export default function StudyPage() {
   }, [])
 
   async function fetchType(type, options = {}) {
-    const { count, format, difficulty, topic_filter } = options
+    const { count, format, difficulty, topic_filter, mix } = options
     const isForced =
-      count != null || format != null || difficulty != null || topic_filter != null
+      count != null ||
+      format != null ||
+      difficulty != null ||
+      topic_filter != null ||
+      mix != null
 
     if (!isForced && fetched.current[type]) return null
 
@@ -91,6 +95,7 @@ export default function StudyPage() {
         format,
         difficulty,
         topic_filter,
+        mix,
       })
       setCache((prev) => ({ ...prev, [type]: data }))
       markUpdated(type)
@@ -107,6 +112,11 @@ export default function StudyPage() {
     }
   }
 
+  const regenerateQuiz = useCallback(async () => {
+    fetched.current.quiz = false
+    await fetchType('quiz', {})
+  }, [docId, markUpdated])
+
   const handleChatAction = useCallback(
     async (action) => {
       const type = getActionGenerateType(action.type)
@@ -115,6 +125,7 @@ export default function StudyPage() {
         format: action.format,
         difficulty: action.difficulty,
         topic_filter: action.topic_filter,
+        mix: action.mix,
       }
 
       if (isAppendAction(action.type)) {
@@ -126,7 +137,7 @@ export default function StudyPage() {
           const itemsKey = type === 'quiz' ? 'questions' : 'flashcards'
           const incoming = data[itemsKey] ?? []
 
-          let appendResult = { addedCount: 0, totalCount: 0, cappedAt: data.capped_at }
+          let appendResult = { addedCount: 0, totalCount: 0 }
 
           setCache((prev) => {
             const existing = prev[type]?.[itemsKey] ?? []
@@ -134,7 +145,6 @@ export default function StudyPage() {
             appendResult = {
               addedCount: merged.length,
               totalCount: existing.length + merged.length,
-              cappedAt: data.capped_at,
             }
             return {
               ...prev,
@@ -142,7 +152,6 @@ export default function StudyPage() {
                 ...prev[type],
                 [itemsKey]: [...existing, ...merged],
                 coverage: data.coverage ?? prev[type]?.coverage,
-                capped_at: data.capped_at ?? prev[type]?.capped_at,
               },
             }
           })
@@ -167,7 +176,6 @@ export default function StudyPage() {
 
       return {
         generatedCount,
-        cappedAt: data?.capped_at,
       }
     },
     [docId, markUpdated],
@@ -281,6 +289,7 @@ export default function StudyPage() {
                 error={errors.quiz}
                 onStudyWeakTopics={handleStudyWeakTopics}
                 studyWeakLoading={studyWeakLoading}
+                onRegenerate={regenerateQuiz}
               />
             </ErrorBoundary>
           )}

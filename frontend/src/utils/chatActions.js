@@ -70,14 +70,8 @@ export function dedupeByQuestion(existing, incoming) {
   })
 }
 
-function cappedSuffix(result) {
-  if (result?.cappedAt != null) {
-    return ` — capped at ${result.cappedAt}, not enough document content for more`
-  }
-  return ''
-}
-
 function formatLabelForToast(action) {
+  if (action.format === 'mixed') return 'mixed-format '
   if (action.format === 'true_false') return 'true/false '
   if (action.format === 'short_answer') return 'short-answer '
   return ''
@@ -91,37 +85,37 @@ export function getActionToastMessage(action, result = {}) {
     return `Switched to ${label}`
   }
 
-  const capped = cappedSuffix(result)
   const formatPrefix = formatLabelForToast(action)
 
   switch (action.type) {
     case 'regenerate_quiz': {
       const count = result.generatedCount ?? action.count
-      return `Quiz updated — ${count} ${formatPrefix}questions generated${capped}`
+      return `Quiz updated — ${count} ${formatPrefix}questions generated`
     }
     case 'append_quiz': {
       const added = result.addedCount ?? action.count
       const total = result.totalCount
       const totalPart = total != null ? ` (now ${total} total)` : ''
-      return `Added ${added} ${formatPrefix}questions to your quiz${totalPart}${capped}`
+      return `Added ${added} ${formatPrefix}questions to your quiz${totalPart}`
     }
     case 'regenerate_flashcards': {
       const count = result.generatedCount ?? action.count
-      return `Flashcards updated — ${count} cards generated${capped}`
+      return `Flashcards updated — ${count} cards generated`
     }
     case 'append_flashcards': {
       const added = result.addedCount ?? action.count
       const total = result.totalCount
       const totalPart = total != null ? ` (now ${total} total)` : ''
-      return `Added ${added} flashcards${totalPart}${capped}`
+      return `Added ${added} flashcards${totalPart}`
     }
     case 'regenerate_summary':
       return 'Summary updated'
     default:
-      if (action.format === 'true_false') return `Switched to true/false format${capped}`
-      if (action.format === 'short_answer') return `Switched to short-answer format${capped}`
-      if (action.format === 'multiple_choice') return `Switched to multiple choice format${capped}`
-      if (action.difficulty) return `Updated to ${action.difficulty} difficulty${capped}`
-      return `Content updated${capped}`
+      if (action.format === 'mixed') return 'Switched to mixed quiz format'
+      if (action.format === 'true_false') return 'Switched to true/false format'
+      if (action.format === 'short_answer') return 'Switched to short-answer format'
+      if (action.format === 'multiple_choice') return 'Switched to multiple choice format'
+      if (action.difficulty) return `Updated to ${action.difficulty} difficulty`
+      return 'Content updated'
   }
 }

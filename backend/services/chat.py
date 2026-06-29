@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any
 
 from openai import APIConnectionError, APIStatusError, OpenAI, OpenAIError, RateLimitError
@@ -25,7 +26,7 @@ VALID_INTENTS = {
 
 VALID_TARGETS = {"flashcards", "quiz", "summary", "chat"}
 VALID_ACTIONS = {"regenerate", "append", "navigate"}
-VALID_FORMATS = {"multiple_choice", "true_false", "short_answer"}
+VALID_FORMATS = {"multiple_choice", "true_false", "short_answer", "mixed"}
 VALID_DIFFICULTIES = {"easy", "medium", "hard"}
 
 DEFAULT_COUNTS = {
@@ -46,7 +47,7 @@ INTENTS (pick exactly one):
 - append_quiz: ADD more quiz questions ("add 5 more", "give me 10 more questions", "add more questions")
 - regenerate_summary: redo summary ("summarize differently", "shorter summary", "new summary")
 - change_difficulty: make content harder/easier ("make the quiz harder", "easier flashcards")
-- change_format: change question/card format ("switch to true/false", "make them multiple choice", "short answer flashcards")
+- change_format: change question/card format ("switch to true/false", "make them multiple choice", "short answer flashcards", OR mixed: "25 questions with 5 true/false")
 - focus_topic: regenerate focused on a topic ("flashcards only about mitosis", "quiz on chapter 3")
 - navigate: go to a tab ("show me the quiz", "go to flashcards", "take me to summary")
 - unclear: ambiguous request — provide a clarifying question
@@ -56,6 +57,7 @@ CRITICAL RULES:
 - "add more" with no target: infer from the most recent topic in conversation history.
 - If still ambiguous, set intent to "unclear".
 - Extract count from numbers ("make 20", "add 5 more"). Use null if not specified.
+- MIXED FORMAT: if user wants a mix of question types (e.g. "25 questions with 5 true/false", "20 multiple choice and 5 true false"), set format to "mixed" and include a "mix" array like [{"format": "multiple_choice", "count": 20}, {"format": "true_false", "count": 5}]. The count field should be the total.
 - If confidence < 0.7, set intent to "unclear" and write a helpful clarifying_question.
 
 Return ONLY valid JSON:
@@ -64,7 +66,8 @@ Return ONLY valid JSON:
   "target": "flashcards" | "quiz" | "summary" | null,
   "action": "regenerate" | "append" | "navigate" | null,
   "count": <integer or null>,
-  "format": "multiple_choice" | "true_false" | "short_answer" | null,
+  "format": "multiple_choice" | "true_false" | "short_answer" | "mixed" | null,
+  "mix": [{"format": "multiple_choice" | "true_false", "count": <integer>}, ...] | null,
   "difficulty": "easy" | "medium" | "hard" | null,
   "topic_filter": "<string or null>",
   "confidence": <0.0 to 1.0>,
@@ -110,6 +113,54 @@ def _format_history_context(history: list[dict[str, str]]) -> str:
     return "Conversation history:\n" + "\n".join(lines) + "\n\n"
 
 
+def _normalize_mix(raw_mix: object) -> list[dict[str, Any]] | None:
+    if not isinstance(raw_mix, list):
+        return None
+
+    mix: list[dict[str, Any]] = []
+    for item in raw_mix:
+        if not isinstance(item, dict):
+            continue
+        fmt = item.get("format")
+        count = item.get("count")
+        if fmt not in {"multiple_choice", "true_false"}:
+            continue
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            continue
+        if count < 1:
+            continue
+        mix.append({"format": fmt, "count": count})
+
+    return mix if mix else None
+
+
+def _infer_mixed_format(message: str, count: int | None) -> list[dict[str, Any]] | None:
+    """Fallback when classifier omits mix but message describes a split."""
+    lowered = message.lower()
+    if "true/false" not in lowered and "true false" not in lowered:
+        return None
+    if "multiple choice" not in lowered and "multiple-choice" not in lowered:
+        # e.g. "25 questions with 5 true/false" — remainder is multiple choice
+        tf_match = re.search(
+            r"(\d+)\s*(?:true[\s/-]?false|t/?f)\b",
+            lowered,
+        )
+        if not tf_match or count is None:
+            return None
+        tf_count = int(tf_match.group(1))
+        mc_count = count - tf_count
+        if mc_count < 1 or tf_count < 1:
+            return None
+        return [
+            {"format": "multiple_choice", "count": mc_count},
+            {"format": "true_false", "count": tf_count},
+        ]
+
+    return None
+
+
 def _normalize_classification(raw: dict[str, Any], message: str) -> dict[str, Any]:
     intent = raw.get("intent", "document_question")
     if intent not in VALID_INTENTS:
@@ -135,6 +186,12 @@ def _normalize_classification(raw: dict[str, Any], message: str) -> dict[str, An
     fmt = raw.get("format")
     if fmt not in VALID_FORMATS:
         fmt = _infer_format(message)
+
+    mix = _normalize_mix(raw.get("mix"))
+    if fmt == "mixed" and mix is None:
+        mix = _infer_mixed_format(message, count)
+    if mix and fmt != "mixed":
+        fmt = "mixed"
 
     difficulty = raw.get("difficulty")
     if difficulty not in VALID_DIFFICULTIES:
@@ -169,6 +226,7 @@ def _normalize_classification(raw: dict[str, Any], message: str) -> dict[str, An
         "action": action,
         "count": count,
         "format": fmt,
+        "mix": mix,
         "difficulty": difficulty,
         "topic_filter": topic_filter,
         "confidence": confidence,
@@ -178,6 +236,11 @@ def _normalize_classification(raw: dict[str, Any], message: str) -> dict[str, An
 
 def _infer_format(message: str) -> str | None:
     lowered = message.lower()
+    if "mixed" in lowered or (
+        ("true/false" in lowered or "true false" in lowered)
+        and any(k in lowered for k in ("multiple choice", "multiple-choice", "with"))
+    ):
+        return "mixed"
     if any(k in lowered for k in ("true/false", "true false", "true-false", "t/f")):
         return "true_false"
     if "short answer" in lowered or "short-answer" in lowered:
@@ -231,7 +294,7 @@ def _resolve_target(classification: dict[str, Any]) -> str | None:
     fmt = classification.get("format")
     if fmt == "short_answer":
         return "flashcards"
-    if fmt in {"true_false", "multiple_choice"}:
+    if fmt in {"true_false", "multiple_choice", "mixed"}:
         return "quiz"
 
     return None
@@ -294,6 +357,10 @@ def _build_action_payload(classification: dict[str, Any]) -> dict[str, Any] | No
     if fmt:
         payload["format"] = fmt
 
+    mix = classification.get("mix")
+    if mix:
+        payload["mix"] = mix
+
     difficulty = classification.get("difficulty") or "medium"
     if intent == "change_difficulty" or classification.get("difficulty"):
         payload["difficulty"] = difficulty
@@ -346,7 +413,9 @@ def _build_reply(classification: dict[str, Any], action: dict[str, Any] | None) 
         parts.append("content")
 
     extras = []
-    if fmt == "true_false":
+    if fmt == "mixed":
+        extras.append("with mixed question formats")
+    elif fmt == "true_false":
         extras.append("in true/false format")
     elif fmt == "short_answer":
         extras.append("as short-answer flashcards")

@@ -4,6 +4,7 @@ import LoadingPanel from './LoadingPanel'
 import {
   getLetterGrade,
   groupByTopic,
+  hasBrokenOptions,
   printHtml,
   shuffleArray,
 } from '../utils/quizHelpers'
@@ -33,6 +34,7 @@ export default function QuizTab({
   error,
   onStudyWeakTopics,
   studyWeakLoading,
+  onRegenerate,
 }) {
   const sourceQuestions = data?.questions ?? []
   const [questionOrder, setQuestionOrder] = useState([])
@@ -71,6 +73,25 @@ export default function QuizTab({
   }
 
   if (sourceQuestions.length === 0) return null
+
+  if (hasBrokenOptions(sourceQuestions)) {
+    return (
+      <div className="space-y-4 rounded-lg bg-red-950/30 px-4 py-6 text-center">
+        <p className="text-sm text-red-300">
+          Quiz failed to load properly — please regenerate
+        </p>
+        {onRegenerate && (
+          <button
+            type="button"
+            onClick={onRegenerate}
+            className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-white"
+          >
+            Regenerate quiz
+          </button>
+        )}
+      </div>
+    )
+  }
 
   const mappedAnswers = answers
   const score = mappedAnswers.filter(
@@ -142,11 +163,7 @@ export default function QuizTab({
   if (showResults) {
     return (
       <div className="space-y-6">
-        <CoverageInfo
-          coverage={data?.coverage}
-          cappedAt={data?.capped_at}
-          itemLabel="questions"
-        />
+        <CoverageInfo coverage={data?.coverage} />
 
         <div className="text-center">
           <div
@@ -284,11 +301,7 @@ export default function QuizTab({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <CoverageInfo
-        coverage={data?.coverage}
-        cappedAt={data?.capped_at}
-        itemLabel="questions"
-      />
+      <CoverageInfo coverage={data?.coverage} />
       <p className="text-center text-sm text-zinc-400">
         Question {currentIndex + 1} / {questions.length}
       </p>

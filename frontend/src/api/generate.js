@@ -7,6 +7,7 @@ export async function generateContent(docId, type, options = {}) {
   if (options.format != null) body.format = options.format
   if (options.difficulty != null) body.difficulty = options.difficulty
   if (options.topic_filter != null) body.topic_filter = options.topic_filter
+  if (options.mix != null) body.mix = options.mix
 
   const response = await fetch(`${API_BASE}/generate`, {
     method: 'POST',

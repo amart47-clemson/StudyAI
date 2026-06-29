@@ -93,11 +93,7 @@ export default function FlashcardsTab({ data, loading, error }) {
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <CoverageInfo
-          coverage={data.coverage}
-          cappedAt={data.capped_at}
-          itemLabel="flashcards"
-        />
+        <CoverageInfo coverage={data.coverage} />
         <button
           type="button"
           onClick={handleExport}

@@ -51,6 +51,16 @@ export function getLetterGrade(score, total) {
   return { letter: 'F', color: 'text-red-400', bg: 'bg-red-950/40' }
 }
 
+const LETTER_ONLY_OPTION = /^[A-Da-d]$/
+
+export function hasBrokenOptions(questions) {
+  return (questions ?? []).some((q) =>
+    (q.options ?? []).some(
+      (opt) => typeof opt === 'string' && LETTER_ONLY_OPTION.test(opt.trim()),
+    ),
+  )
+}
+
 export function shuffleArray(items) {
   const copy = [...items]
   for (let i = copy.length - 1; i > 0; i -= 1) {

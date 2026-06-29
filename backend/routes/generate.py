@@ -2,13 +2,33 @@ from flask import Blueprint, jsonify, request
 from openai import OpenAIError
 
 from services.document_store import get_document
-from services.generation import generate_content, resolve_generation_count
+from services.generation import generate_content, generate_mixed_quiz, resolve_generation_count
 from services.rag import prepare_generation_text
 
 generate_bp = Blueprint("generate", __name__, url_prefix="/api")
 
-VALID_FORMATS = {"multiple_choice", "true_false", "short_answer"}
+VALID_FORMATS = {"multiple_choice", "true_false", "short_answer", "mixed"}
 VALID_DIFFICULTIES = {"easy", "medium", "hard"}
+VALID_MIX_FORMATS = {"multiple_choice", "true_false"}
+
+
+def _parse_mix(raw_mix: object) -> list[dict] | None:
+    if not isinstance(raw_mix, list) or len(raw_mix) == 0:
+        return None
+
+    mix: list[dict] = []
+    for item in raw_mix:
+        if not isinstance(item, dict):
+            continue
+        fmt = item.get("format")
+        count = item.get("count")
+        if fmt not in VALID_MIX_FORMATS:
+            continue
+        if not isinstance(count, int) or count < 1:
+            continue
+        mix.append({"format": fmt, "count": count})
+
+    return mix if mix else None
 
 
 @generate_bp.post("/generate")
@@ -23,6 +43,7 @@ def generate():
     quiz_format = payload.get("format", "multiple_choice")
     difficulty = payload.get("difficulty", "medium")
     topic_filter = payload.get("topic_filter")
+    mix = _parse_mix(payload.get("mix"))
 
     if not doc_id or not gen_type:
         return jsonify({"error": "doc_id and type are required"}), 400
@@ -34,7 +55,9 @@ def generate():
 
     if quiz_format not in VALID_FORMATS:
         return jsonify(
-            {"error": "format must be multiple_choice, true_false, or short_answer"}
+            {
+                "error": "format must be multiple_choice, true_false, short_answer, or mixed"
+            }
         ), 400
 
     if difficulty not in VALID_DIFFICULTIES:
@@ -55,11 +78,18 @@ def generate():
             ), 400
 
     flashcard_format = "short_answer" if quiz_format == "short_answer" else "standard"
-    api_quiz_format = quiz_format if quiz_format in {"multiple_choice", "true_false"} else "multiple_choice"
+    api_quiz_format = (
+        quiz_format if quiz_format in {"multiple_choice", "true_false"} else "multiple_choice"
+    )
 
     if gen_type == "quiz" and quiz_format == "short_answer":
         return jsonify(
             {"error": "short_answer format is only supported for flashcards"}
+        ), 400
+
+    if gen_type == "quiz" and quiz_format == "mixed" and mix is None:
+        return jsonify(
+            {"error": "mix array is required when format is mixed"}
         ), 400
 
     try:
@@ -67,25 +97,28 @@ def generate():
             doc_id,
             topic_filter=topic_filter.strip() if topic_filter else None,
         )
-        actual_count, capped_at = resolve_generation_count(
+        actual_count = resolve_generation_count(
             gen_type,
             coverage["characters_processed"],
             user_count,
         )
 
-        result = generate_content(
-            text,
-            gen_type,
-            count=actual_count,
-            quiz_format=api_quiz_format,
-            flashcard_format=flashcard_format,
-            difficulty=difficulty,
-            topic_filter=topic_filter.strip() if topic_filter else None,
-        )
-        result["coverage"] = coverage
-        if capped_at is not None:
-            result["capped_at"] = capped_at
+        topic = topic_filter.strip() if topic_filter else None
 
+        if gen_type == "quiz" and quiz_format == "mixed" and mix is not None:
+            result = generate_mixed_quiz(text, mix, difficulty=difficulty, topic_filter=topic)
+        else:
+            result = generate_content(
+                text,
+                gen_type,
+                count=actual_count,
+                quiz_format=api_quiz_format,
+                flashcard_format=flashcard_format,
+                difficulty=difficulty,
+                topic_filter=topic,
+            )
+
+        result["coverage"] = coverage
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

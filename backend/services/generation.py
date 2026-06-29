@@ -1,5 +1,6 @@
 import json
 import os
+import random
 from typing import Any, Literal
 
 from openai import APIConnectionError, APIStatusError, OpenAI, OpenAIError, RateLimitError
@@ -14,9 +15,7 @@ MODEL = "gpt-4o-mini"
 FLASHCARD_CHARS_PER_CARD = 300
 QUIZ_CHARS_PER_QUESTION = 500
 FLASHCARD_MIN = 10
-FLASHCARD_MAX = 50
 QUIZ_MIN = 10
-QUIZ_MAX = 40
 
 DIFFICULTY_GUIDANCE: dict[str, str] = {
     "easy": "Use basic recall questions that test definitions and simple facts.",
@@ -26,34 +25,31 @@ DIFFICULTY_GUIDANCE: dict[str, str] = {
 
 
 def recommended_flashcard_count(char_count: int) -> int:
-    return max(FLASHCARD_MIN, min(FLASHCARD_MAX, char_count // FLASHCARD_CHARS_PER_CARD))
+    return max(FLASHCARD_MIN, char_count // FLASHCARD_CHARS_PER_CARD)
 
 
 def recommended_quiz_count(char_count: int) -> int:
-    return max(QUIZ_MIN, min(QUIZ_MAX, char_count // QUIZ_CHARS_PER_QUESTION))
+    return max(QUIZ_MIN, char_count // QUIZ_CHARS_PER_QUESTION)
 
 
 def resolve_generation_count(
     gen_type: GenerationType,
     char_count: int,
     user_count: int | None,
-) -> tuple[int | None, int | None]:
+) -> int | None:
     match gen_type:
-        case "flashcards":
-            maximum = recommended_flashcard_count(char_count)
-        case "quiz":
-            maximum = recommended_quiz_count(char_count)
         case "summary":
-            return None, None
+            return None
+        case "flashcards":
+            if user_count is not None:
+                return user_count
+            return recommended_flashcard_count(char_count)
+        case "quiz":
+            if user_count is not None:
+                return user_count
+            return recommended_quiz_count(char_count)
         case _:
             raise ValueError(f"Unknown generation type: {gen_type}")
-
-    if user_count is None:
-        return maximum, None
-
-    actual = min(user_count, maximum)
-    capped_at = actual if actual < user_count else None
-    return actual, capped_at
 
 
 def _topic_clause(topic_filter: str | None) -> str:
@@ -109,14 +105,23 @@ def _multiple_choice_quiz_prompt(
 {{
   "questions": [
     {{
-      "question": "...",
-      "options": ["A", "B", "C", "D"],
+      "question": "What is the primary advantage of spaced repetition?",
+      "options": [
+        "Better long-term retention than cramming",
+        "Faster memorization in a single session",
+        "Requires less total study time",
+        "Works best for procedural skills"
+      ],
       "correct": 0,
-      "explanation": "..."
+      "explanation": "Spaced repetition distributes practice over time..."
     }}
   ]
 }}
-Generate exactly {count} multiple-choice questions with four options each. "correct" is the 0-based index of the correct option in "options".{_difficulty_clause(difficulty)}{_topic_clause(topic_filter)}
+Generate exactly {count} multiple-choice questions with four options each.
+"correct" is the 0-based index of the correct option in "options".
+Each item in the "options" array must be a complete answer string.
+Do NOT use letters like A, B, C, or D as the option text.
+Do NOT use placeholder labels — write the full answer text for every option.{_difficulty_clause(difficulty)}{_topic_clause(topic_filter)}
 No markdown, no code fences, no extra text — only the JSON object."""
 
 
@@ -172,15 +177,7 @@ def _get_client() -> OpenAI:
     return OpenAI(api_key=api_key)
 
 
-def generate_content(
-    text: str,
-    gen_type: GenerationType,
-    count: int | None = None,
-    quiz_format: QuizFormat = "multiple_choice",
-    flashcard_format: FlashcardFormat = "standard",
-    difficulty: Difficulty = "medium",
-    topic_filter: str | None = None,
-) -> dict[str, Any]:
+def _call_llm(system_prompt: str, text: str) -> dict[str, Any]:
     client = _get_client()
 
     try:
@@ -188,17 +185,7 @@ def generate_content(
             model=MODEL,
             response_format={"type": "json_object"},
             messages=[
-                {
-                    "role": "system",
-                    "content": _system_prompt(
-                        gen_type,
-                        count,
-                        quiz_format,
-                        flashcard_format,
-                        difficulty,
-                        topic_filter,
-                    ),
-                },
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text},
             ],
         )
@@ -219,3 +206,55 @@ def generate_content(
         return json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ValueError("OpenAI returned invalid JSON") from exc
+
+
+def generate_content(
+    text: str,
+    gen_type: GenerationType,
+    count: int | None = None,
+    quiz_format: QuizFormat = "multiple_choice",
+    flashcard_format: FlashcardFormat = "standard",
+    difficulty: Difficulty = "medium",
+    topic_filter: str | None = None,
+) -> dict[str, Any]:
+    return _call_llm(
+        _system_prompt(
+            gen_type,
+            count,
+            quiz_format,
+            flashcard_format,
+            difficulty,
+            topic_filter,
+        ),
+        text,
+    )
+
+
+def generate_mixed_quiz(
+    text: str,
+    mix: list[dict[str, Any]],
+    difficulty: Difficulty = "medium",
+    topic_filter: str | None = None,
+) -> dict[str, Any]:
+    all_questions: list[dict[str, Any]] = []
+
+    for item in mix:
+        fmt = item["format"]
+        item_count = item["count"]
+        if fmt not in {"multiple_choice", "true_false"}:
+            raise ValueError(f"Unsupported mix format: {fmt}")
+        if not isinstance(item_count, int) or item_count < 1:
+            raise ValueError("Each mix item must have a positive count")
+
+        partial = generate_content(
+            text,
+            "quiz",
+            count=item_count,
+            quiz_format=fmt,
+            difficulty=difficulty,
+            topic_filter=topic_filter,
+        )
+        all_questions.extend(partial.get("questions", []))
+
+    random.shuffle(all_questions)
+    return {"questions": all_questions}
