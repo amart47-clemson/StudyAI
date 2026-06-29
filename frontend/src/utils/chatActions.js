@@ -90,6 +90,9 @@ export function getActionToastMessage(action, result = {}) {
   switch (action.type) {
     case 'regenerate_quiz': {
       const count = result.generatedCount ?? action.count
+      if (action.adaptive) {
+        return `Adaptive quiz ready — ${count} questions targeting your weak areas`
+      }
       return `Quiz updated — ${count} ${formatPrefix}questions generated`
     }
     case 'append_quiz': {

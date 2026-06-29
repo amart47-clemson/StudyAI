@@ -5,6 +5,7 @@ from typing import Any
 
 from openai import APIConnectionError, APIStatusError, OpenAI, OpenAIError, RateLimitError
 
+from services.adaptive import get_adaptive_params
 from services.rag import retrieve_relevant_chunks
 
 MODEL = "gpt-4o-mini"
@@ -21,6 +22,7 @@ VALID_INTENTS = {
     "change_format",
     "focus_topic",
     "navigate",
+    "adaptive_quiz",
     "unclear",
 }
 
@@ -44,6 +46,7 @@ INTENTS (pick exactly one):
 - regenerate_flashcards: REPLACE all flashcards ("redo flashcards", "make new flashcards", "give me 20 flashcards")
 - append_flashcards: ADD more flashcards ("add 5 more flashcards", "give me more cards")
 - regenerate_quiz: REPLACE entire quiz ("redo the quiz", "make a 30 question quiz", "make the quiz 30 questions")
+- adaptive_quiz: adaptive quiz on weak areas ("adaptive quiz", "focus on what I got wrong", "quiz me on my weak spots", "harder questions on the stuff I missed")
 - append_quiz: ADD more quiz questions ("add 5 more", "give me 10 more questions", "add more questions")
 - regenerate_summary: redo summary ("summarize differently", "shorter summary", "new summary")
 - change_difficulty: make content harder/easier ("make the quiz harder", "easier flashcards")
@@ -259,6 +262,21 @@ def _infer_difficulty(message: str) -> str | None:
     return None
 
 
+def _infer_adaptive_intent(message: str) -> bool:
+    lowered = message.lower()
+    phrases = (
+        "adaptive quiz",
+        "focus on what i got wrong",
+        "quiz me on my weak",
+        "weak spots",
+        "stuff i missed",
+        "what i got wrong",
+        "harder questions on",
+        "my weak areas",
+    )
+    return any(phrase in lowered for phrase in phrases)
+
+
 def classify_intent(message: str, history: list[dict[str, str]]) -> dict[str, Any]:
     user_content = _format_history_context(history) + f"Latest user message: {message}"
 
@@ -275,7 +293,22 @@ def classify_intent(message: str, history: list[dict[str, str]]) -> dict[str, An
     except json.JSONDecodeError as exc:
         raise ValueError("OpenAI returned invalid JSON for intent classification") from exc
 
-    return _normalize_classification(result, message)
+    result = _normalize_classification(result, message)
+
+    if result["intent"] == "document_question" and _infer_adaptive_intent(message):
+        result["intent"] = "adaptive_quiz"
+        result["target"] = "quiz"
+    elif _infer_adaptive_intent(message) and result["intent"] in {
+        "regenerate_quiz",
+        "change_format",
+        "change_difficulty",
+        "focus_topic",
+        "unclear",
+    }:
+        result["intent"] = "adaptive_quiz"
+        result["target"] = "quiz"
+
+    return result
 
 
 def _resolve_target(classification: dict[str, Any]) -> str | None:
@@ -308,6 +341,7 @@ def _build_action_type(classification: dict[str, Any]) -> str | None:
         "regenerate_flashcards": "regenerate_flashcards",
         "append_flashcards": "append_flashcards",
         "regenerate_quiz": "regenerate_quiz",
+        "adaptive_quiz": "regenerate_quiz",
         "append_quiz": "append_quiz",
         "regenerate_summary": "regenerate_summary",
         "navigate": "navigate",
@@ -350,6 +384,9 @@ def _build_action_payload(classification: dict[str, Any]) -> dict[str, Any] | No
         "mode": "append" if action_type.startswith("append_") else "regenerate",
     }
 
+    if classification["intent"] == "adaptive_quiz":
+        payload["adaptive"] = True
+
     if count is not None:
         payload["count"] = count
 
@@ -374,13 +411,30 @@ def _build_action_payload(classification: dict[str, Any]) -> dict[str, Any] | No
     return payload
 
 
-def _build_reply(classification: dict[str, Any], action: dict[str, Any] | None) -> str:
+def _build_reply(
+    classification: dict[str, Any],
+    action: dict[str, Any] | None,
+    doc_id: str,
+) -> str:
     intent = classification["intent"]
 
     if intent == "unclear":
         return (
             classification.get("clarifying_question")
             or "Could you clarify what you'd like me to do?"
+        )
+
+    if intent == "adaptive_quiz" or (action and action.get("adaptive")):
+        params = get_adaptive_params(doc_id)
+        if params.get("has_history") and params.get("weak_topics"):
+            weak_list = ", ".join(params["weak_topics"])
+            return (
+                f"Generated an adaptive quiz focusing on {weak_list}. "
+                "These came up as your weakest areas last time. Click 'Go to Quiz' to start."
+            )
+        return (
+            "I'd love to build an adaptive quiz, but I need a completed quiz attempt first. "
+            "Finish a quiz, then try again."
         )
 
     if intent == "navigate" or (action and action.get("type") == "navigate"):
@@ -476,7 +530,13 @@ def chat_with_document(
         return _answer_document_question(doc_id, message, history)
 
     action = _build_action_payload(classification)
-    reply = _build_reply(classification, action)
+
+    if classification["intent"] == "adaptive_quiz":
+        params = get_adaptive_params(doc_id)
+        if not params.get("has_history"):
+            action = None
+
+    reply = _build_reply(classification, action, doc_id)
 
     return {
         "reply": reply,

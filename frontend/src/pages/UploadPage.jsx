@@ -6,7 +6,7 @@ import { addRecentDocument, getRecentDocuments } from '../utils/documentHistory'
 
 const FEATURES = [
   { label: 'AI Flashcards', icon: '🃏' },
-  { label: 'Adaptive Quiz', icon: '✓' },
+  { label: 'Adaptive Quiz', icon: '🧠' },
   { label: 'Document Chat', icon: '💬' },
 ]
 
@@ -17,6 +17,27 @@ function formatDate(iso) {
     day: 'numeric',
     year: 'numeric',
   })
+}
+
+function UploadIcon() {
+  return (
+    <svg
+      className="mx-auto mb-4"
+      width="48"
+      height="48"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--accent)"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  )
 }
 
 export default function UploadPage() {
@@ -127,58 +148,61 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-32 top-0 h-96 w-96 rounded-full bg-violet-600/10 blur-3xl" />
-        <div className="absolute -right-32 top-1/3 h-96 w-96 rounded-full bg-blue-600/10 blur-3xl" />
-      </div>
-
+    <div className="landing-bg page-enter min-h-screen">
       <div className="relative mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 lg:flex-row lg:gap-12 lg:py-16">
         <div className="flex-1">
-          <p className="text-sm font-medium uppercase tracking-widest text-violet-400">
-            StudyAI
+          <p
+            className="text-sm font-semibold tracking-[0.2em]"
+            style={{ color: 'var(--accent)' }}
+          >
+            <span aria-hidden="true">🧠 </span>
+            STUDYAI
           </p>
-          <h1 className="mt-3 text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-            Turn any document into a complete study session — instantly
+          <h1 className="mt-4 text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+            <span style={{ color: 'var(--text-primary)' }}>
+              Turn any document into a complete study session —{' '}
+            </span>
+            <span className="gradient-text">instantly</span>
           </h1>
-          <p className="mt-4 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
+          <p
+            className="mt-5 max-w-xl text-base leading-relaxed sm:text-lg"
+            style={{ color: 'var(--text-secondary)' }}
+          >
             Upload a PDF or paste notes and get AI-generated summaries, flashcards,
             quizzes, and a chat assistant grounded in your material.
           </p>
 
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-8 flex flex-wrap gap-3">
             {FEATURES.map((feature) => (
-              <span
-                key={feature.label}
-                className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/80 px-4 py-2 text-sm text-zinc-300"
-              >
-                <span aria-hidden="true">{feature.icon}</span>
+              <span key={feature.label} className="feature-pill">
+                <span className="feature-pill-icon" aria-hidden="true">
+                  {feature.icon}
+                </span>
                 {feature.label}
               </span>
             ))}
           </div>
 
-          <div className="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-1 shadow-2xl backdrop-blur">
-            <div className="flex rounded-xl bg-zinc-950/50 p-1">
+          <div
+            className="mt-10 p-1 shadow-2xl"
+            style={{
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-surface)',
+            }}
+          >
+            <div className="pill-toggle m-3 mb-0">
               <button
                 type="button"
                 onClick={() => setMode('file')}
-                className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  mode === 'file'
-                    ? 'bg-zinc-800 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                className={`pill-toggle-btn ${mode === 'file' ? 'active' : ''}`}
               >
                 Upload PDF
               </button>
               <button
                 type="button"
                 onClick={() => setMode('text')}
-                className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  mode === 'text'
-                    ? 'bg-zinc-800 text-white'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                className={`pill-toggle-btn ${mode === 'text' ? 'active' : ''}`}
               >
                 Paste text
               </button>
@@ -193,20 +217,31 @@ export default function UploadPage() {
                   }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={handleDrop}
-                  className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-12 transition-colors sm:py-16 ${
-                    isDragging
-                      ? 'border-violet-500 bg-violet-950/20'
-                      : 'border-zinc-700 hover:border-zinc-600'
+                  className={`upload-zone flex flex-col items-center justify-center px-4 py-12 sm:py-16 ${
+                    isDragging ? 'is-dragging' : ''
                   }`}
                 >
-                  <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-zinc-800 text-xl">
-                    📄
-                  </div>
-                  <p className="text-sm font-medium text-zinc-200">
+                  <UploadIcon />
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
                     Drag and drop a PDF here
                   </p>
-                  <p className="mt-1 text-xs text-zinc-500">or tap to browse</p>
-                  <label className="mt-4 cursor-pointer rounded-lg bg-white px-5 py-2.5 text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-100">
+                  <p
+                    className="mt-1 text-xs"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    or tap to browse
+                  </p>
+                  <label
+                    className="mt-5 cursor-pointer rounded-lg px-5 py-2.5 text-sm font-medium transition-all duration-150"
+                    style={{
+                      background: 'var(--accent-glow)',
+                      color: 'var(--accent)',
+                      border: '1px solid var(--border-accent)',
+                    }}
+                  >
                     Choose file
                     <input
                       type="file"
@@ -216,7 +251,10 @@ export default function UploadPage() {
                     />
                   </label>
                   {file && (
-                    <p className="mt-4 max-w-full truncate px-4 text-sm text-violet-300">
+                    <p
+                      className="mt-4 max-w-full truncate px-4 text-sm"
+                      style={{ color: 'var(--accent-secondary)' }}
+                    >
                       {file.name}
                     </p>
                   )}
@@ -227,12 +265,24 @@ export default function UploadPage() {
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Paste your study material here..."
                   rows={8}
-                  className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500 focus:outline-none"
+                  className="w-full resize-none px-4 py-3 text-sm focus:outline-none"
+                  style={{
+                    borderRadius: 'var(--radius)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-base)',
+                    color: 'var(--text-primary)',
+                  }}
                 />
               )}
 
               {error && (
-                <p className="rounded-lg bg-red-950/50 px-3 py-2 text-sm text-red-400">
+                <p
+                  className="rounded-lg px-3 py-2 text-sm"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    color: 'var(--danger)',
+                  }}
+                >
                   {error}
                 </p>
               )}
@@ -240,22 +290,33 @@ export default function UploadPage() {
               <button
                 type="submit"
                 disabled={loading || demoLoading}
-                className="w-full rounded-xl bg-white px-4 py-3.5 text-sm font-semibold text-zinc-900 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary"
               >
                 {loading ? 'Processing your document…' : 'Start studying →'}
               </button>
 
               <div className="relative flex items-center py-1">
-                <div className="flex-1 border-t border-zinc-800" />
-                <span className="px-3 text-xs text-zinc-600">or</span>
-                <div className="flex-1 border-t border-zinc-800" />
+                <div
+                  className="flex-1 border-t"
+                  style={{ borderColor: 'var(--border)' }}
+                />
+                <span
+                  className="px-3 text-xs"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  or
+                </span>
+                <div
+                  className="flex-1 border-t"
+                  style={{ borderColor: 'var(--border)' }}
+                />
               </div>
 
               <button
                 type="button"
                 onClick={handleDemo}
                 disabled={loading || demoLoading}
-                className="w-full rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-ghost"
               >
                 {demoLoading ? 'Loading sample…' : '✨ Try a sample document'}
               </button>
@@ -265,21 +326,37 @@ export default function UploadPage() {
 
         {recentDocs.length > 0 && (
           <aside className="w-full shrink-0 lg:w-72">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 backdrop-blur">
-              <h2 className="text-sm font-semibold text-zinc-300">Recent documents</h2>
-              <p className="mt-1 text-xs text-zinc-500">Pick up where you left off</p>
+            <div className="surface-card p-5">
+              <h2
+                className="text-sm font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Recent documents
+              </h2>
+              <p
+                className="mt-1 text-xs"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Pick up where you left off
+              </p>
               <ul className="mt-4 space-y-2">
                 {recentDocs.map((doc) => (
                   <li key={doc.docId}>
                     <button
                       type="button"
                       onClick={() => navigate(`/study/${doc.docId}`)}
-                      className="w-full rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800/50"
+                      className="recent-doc-btn"
                     >
-                      <p className="truncate text-sm font-medium text-zinc-200">
+                      <p
+                        className="truncate text-sm font-medium"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
                         {doc.filename}
                       </p>
-                      <p className="mt-0.5 text-xs text-zinc-500">
+                      <p
+                        className="mt-0.5 text-xs"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
                         {formatDate(doc.uploadTime)}
                       </p>
                     </button>

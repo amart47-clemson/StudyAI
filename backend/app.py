@@ -11,6 +11,7 @@ from routes.chat import chat_bp
 from routes.demo import demo_bp
 from routes.documents import documents_bp
 from routes.generate import generate_bp
+from routes.quiz import quiz_bp
 from routes.upload import upload_bp
 
 load_dotenv()
@@ -36,6 +37,7 @@ app.register_blueprint(generate_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(documents_bp)
 app.register_blueprint(demo_bp)
+app.register_blueprint(quiz_bp)
 
 
 @app.get("/health")

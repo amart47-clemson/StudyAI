@@ -25,7 +25,13 @@ export default function SummaryTab({ data, loading, error }) {
 
   if (error) {
     return (
-      <div className="rounded-lg bg-red-950/50 px-4 py-3 text-sm text-red-400">
+      <div
+        className="rounded-lg px-4 py-3 text-sm"
+        style={{
+          background: 'rgba(239, 68, 68, 0.12)',
+          color: 'var(--danger)',
+        }}
+      >
         {error}
       </div>
     )
@@ -40,26 +46,35 @@ export default function SummaryTab({ data, loading, error }) {
         <button
           type="button"
           onClick={handleCopy}
-          className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+          className="btn-ghost shrink-0 !w-auto px-3 py-1.5 text-xs"
         >
           {copied ? 'Copied!' : 'Copy summary'}
         </button>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-6">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200 sm:text-base">
+      <div className="surface-elevated p-4 sm:p-6">
+        <p
+          className="whitespace-pre-wrap text-sm leading-relaxed sm:text-base"
+          style={{ color: 'var(--text-primary)' }}
+        >
           {data.summary}
         </p>
       </div>
 
       {data.key_concepts?.length > 0 && (
         <div>
-          <h3 className="mb-3 text-sm font-medium text-zinc-400">Key concepts</h3>
+          <h3
+            className="mb-3 text-sm font-medium"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Key concepts
+          </h3>
           <div className="flex flex-wrap gap-2">
             {data.key_concepts.map((concept) => (
               <span
                 key={concept}
-                className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-sm text-zinc-200"
+                className="feature-pill text-sm"
+                style={{ padding: '0.375rem 0.875rem' }}
               >
                 {concept}
               </span>

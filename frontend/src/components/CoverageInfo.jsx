@@ -9,7 +9,10 @@ export default function CoverageInfo({ coverage }) {
     coverage.chunks_used < coverage.total_chunks
 
   return (
-    <div className="border-b border-zinc-800 pb-4 text-xs text-zinc-500">
+    <div
+      className="border-b pb-4 text-xs"
+      style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+    >
       <p>
         Generated from {chars} characters across {chunkCount} document chunk
         {chunkCount === 1 ? '' : 's'}

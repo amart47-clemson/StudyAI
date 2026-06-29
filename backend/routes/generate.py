@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from openai import OpenAIError
 
+from services.adaptive import build_adaptive_prompt_clause, get_adaptive_params
 from services.document_store import get_document
 from services.generation import generate_content, generate_mixed_quiz, resolve_generation_count
 from services.rag import prepare_generation_text
@@ -44,6 +45,7 @@ def generate():
     difficulty = payload.get("difficulty", "medium")
     topic_filter = payload.get("topic_filter")
     mix = _parse_mix(payload.get("mix"))
+    use_adaptive = bool(payload.get("adaptive", False))
 
     if not doc_id or not gen_type:
         return jsonify({"error": "doc_id and type are required"}), 400
@@ -105,8 +107,25 @@ def generate():
 
         topic = topic_filter.strip() if topic_filter else None
 
+        adaptive_clause = ""
+        adaptive_active = False
+        adaptive_summary = None
+
+        if gen_type == "quiz" and use_adaptive:
+            adaptive_params = get_adaptive_params(doc_id)
+            if adaptive_params.get("has_history"):
+                adaptive_clause = build_adaptive_prompt_clause(adaptive_params)
+                adaptive_active = True
+                adaptive_summary = adaptive_params.get("summary")
+
         if gen_type == "quiz" and quiz_format == "mixed" and mix is not None:
-            result = generate_mixed_quiz(text, mix, difficulty=difficulty, topic_filter=topic)
+            result = generate_mixed_quiz(
+                text,
+                mix,
+                difficulty=difficulty,
+                topic_filter=topic,
+                adaptive_clause=adaptive_clause,
+            )
         else:
             result = generate_content(
                 text,
@@ -116,9 +135,14 @@ def generate():
                 flashcard_format=flashcard_format,
                 difficulty=difficulty,
                 topic_filter=topic,
+                adaptive_clause=adaptive_clause,
             )
 
         result["coverage"] = coverage
+        if adaptive_active:
+            result["adaptive"] = True
+            result["adaptive_summary"] = adaptive_summary
+
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

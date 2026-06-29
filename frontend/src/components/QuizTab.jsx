@@ -1,46 +1,60 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { submitQuiz } from '../api/quiz'
 import CoverageInfo from './CoverageInfo'
 import LoadingPanel from './LoadingPanel'
 import {
   getLetterGrade,
-  groupByTopic,
   hasBrokenOptions,
   printHtml,
   shuffleArray,
 } from '../utils/quizHelpers'
 
-function optionClass(optionIndex, selected, correctIndex) {
-  const base =
-    'w-full rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors'
+const OPTION_LETTERS = ['A', 'B', 'C', 'D']
 
-  if (selected === null) {
-    return `${base} border-zinc-700 bg-zinc-800/50 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800`
+function getOptionClass(optionIndex, selected, correctIndex) {
+  if (selected === null) return 'quiz-option'
+
+  if (optionIndex === correctIndex) return 'quiz-option correct'
+  if (optionIndex === selected) return 'quiz-option wrong'
+  return 'quiz-option dimmed'
+}
+
+function strengthBadge(strength) {
+  switch (strength) {
+    case 'weak':
+      return { label: 'Needs Work', className: 'badge-weak' }
+    case 'medium':
+      return { label: 'Getting There', className: 'badge-medium' }
+    case 'strong':
+      return { label: 'Mastered', className: 'badge-strong' }
+    default:
+      return { label: 'Getting There', className: 'badge-medium' }
   }
-
-  if (optionIndex === correctIndex) {
-    return `${base} border-green-600 bg-green-950/60 text-green-300`
-  }
-
-  if (optionIndex === selected) {
-    return `${base} border-red-600 bg-red-950/60 text-red-300`
-  }
-
-  return `${base} border-zinc-800 bg-zinc-900/50 text-zinc-500 opacity-60`
 }
 
 export default function QuizTab({
+  docId,
   data,
   loading,
   error,
   onStudyWeakTopics,
   studyWeakLoading,
   onRegenerate,
+  onAdaptiveQuiz,
+  adaptiveQuizLoading,
+  previousQuizScorePct,
+  onAttemptComplete,
 }) {
   const sourceQuestions = data?.questions ?? []
   const [questionOrder, setQuestionOrder] = useState([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [answers, setAnswers] = useState([])
   const [showResults, setShowResults] = useState(false)
+  const [performanceProfile, setPerformanceProfile] = useState(null)
+  const [submitError, setSubmitError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [deltaBaselinePct, setDeltaBaselinePct] = useState(null)
+  const submittedRef = useRef(false)
 
   const questions = useMemo(() => {
     if (sourceQuestions.length === 0) return []
@@ -59,14 +73,54 @@ export default function QuizTab({
       setAnswers(Array(sourceQuestions.length).fill(null))
       setCurrentIndex(0)
       setShowResults(false)
+      setPerformanceProfile(null)
+      setSubmitError(null)
+      submittedRef.current = false
     }
   }, [sourceQuestions])
+
+  const mappedAnswers = answers
+  const score = mappedAnswers.filter(
+    (selected, i) => selected === questions[i]?.correct,
+  ).length
+  const scorePct =
+    questions.length > 0 ? Math.round((score / questions.length) * 100) : 0
+
+  const progressPct =
+    questions.length > 0
+      ? Math.round(((currentIndex + 1) / questions.length) * 100)
+      : 0
+
+  useEffect(() => {
+    if (!showResults || !docId || questions.length === 0) return
+    if (submittedRef.current) return
+
+    submittedRef.current = true
+    setDeltaBaselinePct(previousQuizScorePct)
+    setSubmitting(true)
+    setSubmitError(null)
+
+    submitQuiz(docId, questions, mappedAnswers)
+      .then((profile) => setPerformanceProfile(profile))
+      .catch((err) => {
+        setSubmitError(
+          err instanceof Error ? err.message : 'Failed to analyze performance',
+        )
+      })
+      .finally(() => setSubmitting(false))
+  }, [showResults, docId, questions, mappedAnswers, previousQuizScorePct])
 
   if (loading) return <LoadingPanel type="quiz" />
 
   if (error) {
     return (
-      <div className="rounded-lg bg-red-950/50 px-4 py-3 text-sm text-red-400">
+      <div
+        className="rounded-lg px-4 py-3 text-sm"
+        style={{
+          background: 'rgba(239, 68, 68, 0.12)',
+          color: 'var(--danger)',
+        }}
+      >
         {error}
       </div>
     )
@@ -76,16 +130,15 @@ export default function QuizTab({
 
   if (hasBrokenOptions(sourceQuestions)) {
     return (
-      <div className="space-y-4 rounded-lg bg-red-950/30 px-4 py-6 text-center">
-        <p className="text-sm text-red-300">
+      <div
+        className="space-y-4 rounded-lg px-4 py-6 text-center"
+        style={{ background: 'rgba(239, 68, 68, 0.08)' }}
+      >
+        <p className="text-sm" style={{ color: 'var(--danger)' }}>
           Quiz failed to load properly — please regenerate
         </p>
         {onRegenerate && (
-          <button
-            type="button"
-            onClick={onRegenerate}
-            className="rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-white"
-          >
+          <button type="button" onClick={onRegenerate} className="btn-primary max-w-xs">
             Regenerate quiz
           </button>
         )}
@@ -93,14 +146,19 @@ export default function QuizTab({
     )
   }
 
-  const mappedAnswers = answers
-  const score = mappedAnswers.filter(
-    (selected, i) => selected === questions[i]?.correct,
-  ).length
-
   const grade = getLetterGrade(score, questions.length)
-  const topicBreakdown = groupByTopic(questions, mappedAnswers)
-  const weakTopics = topicBreakdown.filter((t) => t.correct < t.total)
+  const weakTopics =
+    performanceProfile?.weak_topics ??
+    Object.entries(performanceProfile?.topics ?? {})
+      .filter(([, stats]) => stats.strength === 'weak')
+      .map(([name]) => name)
+
+  const scoreDelta =
+    deltaBaselinePct != null ? scorePct - deltaBaselinePct : null
+
+  function saveAttemptScore() {
+    if (onAttemptComplete) onAttemptComplete(scorePct)
+  }
 
   function handleSelect(optionIndex) {
     if (mappedAnswers[currentIndex] !== null) return
@@ -121,18 +179,30 @@ export default function QuizTab({
   }
 
   function handleRetake() {
+    saveAttemptScore()
     const shuffled = shuffleArray(sourceQuestions.map((_, i) => i))
     setQuestionOrder(shuffled)
     setAnswers(Array(sourceQuestions.length).fill(null))
     setCurrentIndex(0)
     setShowResults(false)
+    submittedRef.current = false
+  }
+
+  async function handleAdaptiveQuiz() {
+    if (!onAdaptiveQuiz) return
+    saveAttemptScore()
+    await onAdaptiveQuiz()
   }
 
   function handleExportResults() {
-    const topicsHtml = topicBreakdown
+    const topicEntries = performanceProfile?.topics
+      ? Object.entries(performanceProfile.topics)
+      : []
+
+    const topicsHtml = topicEntries
       .map(
-        (t) =>
-          `<div class="card"><p class="q">${t.topic}</p><p class="meta">${t.correct}/${t.total} correct (${Math.round((t.correct / t.total) * 100)}%)</p></div>`,
+        ([topic, stats]) =>
+          `<div class="card"><p class="q">${topic}</p><p class="meta">${stats.correct}/${stats.total} correct (${Math.round(stats.score * 100)}%)</p></div>`,
       )
       .join('')
 
@@ -148,7 +218,7 @@ export default function QuizTab({
     printHtml(
       'StudyAI Quiz Results',
       `<h1>Quiz Results</h1>
-       <p class="meta">Grade: ${grade.letter} — ${score}/${questions.length} (${Math.round((score / questions.length) * 100)}%)</p>
+       <p class="meta">Grade: ${grade.letter} — ${score}/${questions.length} (${scorePct}%)</p>
        <h2>By topic</h2>${topicsHtml}
        <h2>Question breakdown</h2>${breakdownHtml}`,
     )
@@ -156,11 +226,17 @@ export default function QuizTab({
 
   async function handleStudyWeak() {
     if (!onStudyWeakTopics || weakTopics.length === 0) return
-    const topicNames = weakTopics.map((t) => t.topic).join(', ')
+    const topicNames = weakTopics.join(', ')
     await onStudyWeakTopics(topicNames)
   }
 
   if (showResults) {
+    const topicEntries = performanceProfile?.topics
+      ? Object.entries(performanceProfile.topics).sort(
+          ([, a], [, b]) => a.score - b.score,
+        )
+      : []
+
     return (
       <div className="space-y-6">
         <CoverageInfo coverage={data?.coverage} />
@@ -171,58 +247,112 @@ export default function QuizTab({
           >
             {grade.letter}
           </div>
-          <p className="text-sm text-zinc-400">Your score</p>
-          <p className="mt-1 text-3xl font-semibold text-white sm:text-4xl">
+          <div className="flex items-center justify-center gap-2">
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Your score
+            </p>
+            {data?.adaptive && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{
+                  background: 'var(--accent-glow)',
+                  color: 'var(--accent-secondary)',
+                  border: '1px solid var(--border-accent)',
+                }}
+              >
+                Adaptive
+              </span>
+            )}
+          </div>
+          <p
+            className="mt-1 text-3xl font-bold sm:text-4xl"
+            style={{ color: 'var(--text-primary)' }}
+          >
             {score} / {questions.length}
           </p>
-          <p className="mt-1 text-sm text-zinc-500">
-            {Math.round((score / questions.length) * 100)}% correct
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+            {scorePct}% correct
           </p>
+          {scoreDelta != null && scoreDelta !== 0 && (
+            <p
+              className="mt-1 text-sm font-medium"
+              style={{ color: scoreDelta > 0 ? 'var(--success)' : 'var(--danger)' }}
+            >
+              {scoreDelta > 0 ? '+' : ''}
+              {scoreDelta}% from last attempt
+            </p>
+          )}
+          {scoreDelta === 0 && deltaBaselinePct != null && (
+            <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+              Same as last attempt
+            </p>
+          )}
         </div>
 
         <div>
-          <h3 className="mb-3 text-sm font-medium text-zinc-400">By topic</h3>
-          <div className="space-y-2">
-            {topicBreakdown.map((t) => {
-              const pct = Math.round((t.correct / t.total) * 100)
-              const struggled = pct < 70
-              return (
-                <div
-                  key={t.topic}
-                  className={`rounded-lg border px-4 py-3 ${
-                    struggled
-                      ? 'border-red-800/60 bg-red-950/20'
-                      : 'border-green-800/60 bg-green-950/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium capitalize text-zinc-200">
-                      {t.topic}
-                    </span>
-                    <span
-                      className={`text-xs font-medium ${
-                        struggled ? 'text-red-400' : 'text-green-400'
-                      }`}
-                    >
-                      {t.correct}/{t.total}
-                    </span>
+          <h3
+            className="mb-3 text-sm font-medium"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Performance Breakdown
+            {submitting && (
+              <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Analyzing…
+              </span>
+            )}
+          </h3>
+          {submitError && (
+            <p className="mb-2 text-xs" style={{ color: 'var(--danger)' }}>
+              {submitError}
+            </p>
+          )}
+          {topicEntries.length > 0 ? (
+            <div className="space-y-2">
+              {topicEntries.map(([topic, stats]) => {
+                const badge = strengthBadge(stats.strength)
+                return (
+                  <div key={topic} className="surface-elevated px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span
+                        className="text-sm font-medium capitalize"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {topic}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge.className}`}
+                        >
+                          {badge.label}
+                        </span>
+                        <span
+                          className="text-xs"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {stats.correct} / {stats.total} correct
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                    <div
-                      className={`h-full rounded-full ${
-                        struggled ? 'bg-red-500' : 'bg-green-500'
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          ) : (
+            !submitting && (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Topic breakdown will appear after analysis completes.
+              </p>
+            )
+          )}
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-400">Breakdown</h3>
+          <h3
+            className="text-sm font-medium"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Breakdown
+          </h3>
           {questions.map((q, i) => {
             const selected = mappedAnswers[i]
             const correct = selected === q.correct
@@ -230,26 +360,35 @@ export default function QuizTab({
             return (
               <div
                 key={i}
-                className={`rounded-lg border px-4 py-3 ${
-                  correct
-                    ? 'border-green-800 bg-green-950/30'
-                    : 'border-red-800 bg-red-950/30'
-                }`}
+                className="rounded-lg border px-4 py-3"
+                style={{
+                  borderColor: correct
+                    ? 'rgba(16, 185, 129, 0.4)'
+                    : 'rgba(239, 68, 68, 0.4)',
+                  background: correct
+                    ? 'rgba(16, 185, 129, 0.08)'
+                    : 'rgba(239, 68, 68, 0.08)',
+                }}
               >
                 <div className="flex items-start gap-2">
                   <span
-                    className={`mt-0.5 shrink-0 text-sm font-semibold ${
-                      correct ? 'text-green-400' : 'text-red-400'
-                    }`}
+                    className="mt-0.5 shrink-0 text-sm font-semibold"
+                    style={{ color: correct ? 'var(--success)' : 'var(--danger)' }}
                   >
                     {correct ? '✓' : '✗'}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm text-zinc-200">
+                    <p
+                      className="text-sm"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
                       {i + 1}. {q.question}
                     </p>
                     {!correct && (
-                      <p className="mt-1 text-xs text-zinc-500">
+                      <p
+                        className="mt-1 text-xs"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
                         Correct: {q.options[q.correct]}
                       </p>
                     )}
@@ -260,29 +399,31 @@ export default function QuizTab({
           })}
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {weakTopics.length > 0 && onStudyWeakTopics && (
             <button
               type="button"
               onClick={handleStudyWeak}
               disabled={studyWeakLoading}
-              className="flex-1 rounded-lg bg-violet-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-60"
+              className="btn-primary flex-1 disabled:opacity-60"
             >
               {studyWeakLoading ? 'Generating…' : 'Study these topics'}
             </button>
           )}
-          <button
-            type="button"
-            onClick={handleExportResults}
-            className="flex-1 rounded-lg border border-zinc-700 px-4 py-3 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
-          >
+          {onAdaptiveQuiz && (
+            <button
+              type="button"
+              onClick={handleAdaptiveQuiz}
+              disabled={adaptiveQuizLoading}
+              className="btn-ghost flex-1 disabled:opacity-60"
+            >
+              {adaptiveQuizLoading ? 'Generating…' : '🧠 Adaptive Quiz'}
+            </button>
+          )}
+          <button type="button" onClick={handleExportResults} className="btn-ghost flex-1">
             Export results
           </button>
-          <button
-            type="button"
-            onClick={handleRetake}
-            className="flex-1 rounded-lg bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-900 transition-colors hover:bg-white"
-          >
+          <button type="button" onClick={handleRetake} className="btn-primary flex-1">
             Retake (shuffled)
           </button>
         </div>
@@ -301,41 +442,71 @@ export default function QuizTab({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <CoverageInfo coverage={data?.coverage} />
-      <p className="text-center text-sm text-zinc-400">
-        Question {currentIndex + 1} / {questions.length}
-      </p>
+      {data?.adaptive && (
+        <div className="adaptive-banner">
+          <p
+            className="text-xs font-semibold uppercase tracking-wide"
+            style={{ color: 'var(--accent)' }}
+          >
+            Adaptive mode — focusing on your weak areas
+          </p>
+          <p
+            className="mt-1 text-sm"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {data.adaptive_summary ||
+              'Focusing on your weak areas from your last attempt'}
+          </p>
+        </div>
+      )}
 
-      <p className="text-base font-medium text-zinc-100 sm:text-lg">
+      <div className="quiz-progress-bar">
+        <div
+          className="quiz-progress-fill"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      <CoverageInfo coverage={data?.coverage} />
+
+      <div className="text-center">
+        <span className="quiz-counter-pill">
+          Question {currentIndex + 1} / {questions.length}
+        </span>
+      </div>
+
+      <p
+        className="text-lg font-bold sm:text-xl"
+        style={{ color: 'var(--text-primary)' }}
+      >
         {current.question}
       </p>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {current.options.map((option, optionIndex) => (
           <button
             key={`${option}-${optionIndex}`}
             type="button"
             onClick={() => handleSelect(optionIndex)}
             disabled={isAnswered}
-            className={optionClass(optionIndex, selected, current.correct)}
+            className={getOptionClass(optionIndex, selected, current.correct)}
           >
-            {option}
+            <span className="quiz-option-letter">
+              {OPTION_LETTERS[optionIndex] ?? '?'}
+            </span>
+            <span>{option}</span>
           </button>
         ))}
       </div>
 
       {isAnswered && (
-        <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3">
-          <p className="text-sm text-zinc-300">{current.explanation}</p>
+        <div className="quiz-explanation">
+          💡 {current.explanation}
         </div>
       )}
 
       {isAnswered && (
-        <button
-          type="button"
-          onClick={handleNext}
-          className="w-full rounded-lg bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-900 transition-colors hover:bg-white"
-        >
+        <button type="button" onClick={handleNext} className="btn-primary">
           {isLast ? 'See results' : 'Next question'}
         </button>
       )}

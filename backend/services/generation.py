@@ -100,6 +100,7 @@ def _multiple_choice_quiz_prompt(
     count: int,
     difficulty: str,
     topic_filter: str | None,
+    adaptive_clause: str = "",
 ) -> str:
     return f"""You are a study assistant. Analyze the provided study material and return ONLY valid JSON with this exact structure:
 {{
@@ -121,7 +122,7 @@ Generate exactly {count} multiple-choice questions with four options each.
 "correct" is the 0-based index of the correct option in "options".
 Each item in the "options" array must be a complete answer string.
 Do NOT use letters like A, B, C, or D as the option text.
-Do NOT use placeholder labels — write the full answer text for every option.{_difficulty_clause(difficulty)}{_topic_clause(topic_filter)}
+Do NOT use placeholder labels — write the full answer text for every option.{_difficulty_clause(difficulty)}{_topic_clause(topic_filter)}{adaptive_clause}
 No markdown, no code fences, no extra text — only the JSON object."""
 
 
@@ -129,6 +130,7 @@ def _true_false_quiz_prompt(
     count: int,
     difficulty: str,
     topic_filter: str | None,
+    adaptive_clause: str = "",
 ) -> str:
     return f"""You are a study assistant. Analyze the provided study material and return ONLY valid JSON with this exact structure:
 {{
@@ -141,7 +143,7 @@ def _true_false_quiz_prompt(
     }}
   ]
 }}
-Generate exactly {count} true/false questions. Each question MUST have exactly two options: ["True", "False"]. "correct" is 0 if True is correct, or 1 if False is correct.{_difficulty_clause(difficulty)}{_topic_clause(topic_filter)}
+Generate exactly {count} true/false questions. Each question MUST have exactly two options: ["True", "False"]. "correct" is 0 if True is correct, or 1 if False is correct.{_difficulty_clause(difficulty)}{_topic_clause(topic_filter)}{adaptive_clause}
 No markdown, no code fences, no extra text — only the JSON object."""
 
 
@@ -152,6 +154,7 @@ def _system_prompt(
     flashcard_format: FlashcardFormat = "standard",
     difficulty: Difficulty = "medium",
     topic_filter: str | None = None,
+    adaptive_clause: str = "",
 ) -> str:
     match gen_type:
         case "summary":
@@ -164,8 +167,8 @@ def _system_prompt(
             if count is None:
                 raise ValueError("count is required for quiz generation")
             if quiz_format == "true_false":
-                return _true_false_quiz_prompt(count, difficulty, topic_filter)
-            return _multiple_choice_quiz_prompt(count, difficulty, topic_filter)
+                return _true_false_quiz_prompt(count, difficulty, topic_filter, adaptive_clause)
+            return _multiple_choice_quiz_prompt(count, difficulty, topic_filter, adaptive_clause)
         case _:
             raise ValueError(f"Unknown generation type: {gen_type}")
 
@@ -216,6 +219,7 @@ def generate_content(
     flashcard_format: FlashcardFormat = "standard",
     difficulty: Difficulty = "medium",
     topic_filter: str | None = None,
+    adaptive_clause: str = "",
 ) -> dict[str, Any]:
     return _call_llm(
         _system_prompt(
@@ -225,6 +229,7 @@ def generate_content(
             flashcard_format,
             difficulty,
             topic_filter,
+            adaptive_clause,
         ),
         text,
     )
@@ -235,6 +240,7 @@ def generate_mixed_quiz(
     mix: list[dict[str, Any]],
     difficulty: Difficulty = "medium",
     topic_filter: str | None = None,
+    adaptive_clause: str = "",
 ) -> dict[str, Any]:
     all_questions: list[dict[str, Any]] = []
 
@@ -253,6 +259,7 @@ def generate_mixed_quiz(
             quiz_format=fmt,
             difficulty=difficulty,
             topic_filter=topic_filter,
+            adaptive_clause=adaptive_clause,
         )
         all_questions.extend(partial.get("questions", []))
 

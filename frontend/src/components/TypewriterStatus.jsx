@@ -28,9 +28,12 @@ export default function TypewriterStatus({ messages, intervalMs = 2800 }) {
   }, [charIndex, currentMessage, messages.length, intervalMs])
 
   return (
-    <p className="mt-4 text-sm text-zinc-400">
+    <p className="mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
       {displayed}
-      <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-zinc-400" />
+      <span
+        className="ml-0.5 inline-block h-4 w-0.5 animate-pulse"
+        style={{ background: 'var(--accent)' }}
+      />
     </p>
   )
 }

@@ -13,6 +13,7 @@ import {
   getActionToastMessage,
   isAppendAction,
 } from '../utils/chatActions'
+import { getRecentDocuments } from '../utils/documentHistory'
 
 const TABS = [
   { id: 'summary', label: 'Summary' },
@@ -32,6 +33,9 @@ export default function StudyPage() {
   const [chatMessages, setChatMessages] = useState([])
   const [toast, setToast] = useState('')
   const [studyWeakLoading, setStudyWeakLoading] = useState(false)
+  const [adaptiveQuizLoading, setAdaptiveQuizLoading] = useState(false)
+  const [previousQuizScorePct, setPreviousQuizScorePct] = useState(null)
+  const [docFilename, setDocFilename] = useState(null)
 
   const [cache, setCache] = useState({
     summary: null,
@@ -57,6 +61,11 @@ export default function StudyPage() {
   const fetched = useRef({ summary: false, flashcards: false, quiz: false })
   const toastTimer = useRef(null)
 
+  useEffect(() => {
+    const recent = getRecentDocuments().find((d) => d.docId === docId)
+    setDocFilename(recent?.filename ?? null)
+  }, [docId])
+
   const showToast = useCallback((message) => {
     setToast(message)
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -74,13 +83,14 @@ export default function StudyPage() {
   }, [])
 
   async function fetchType(type, options = {}) {
-    const { count, format, difficulty, topic_filter, mix } = options
+    const { count, format, difficulty, topic_filter, mix, adaptive } = options
     const isForced =
       count != null ||
       format != null ||
       difficulty != null ||
       topic_filter != null ||
-      mix != null
+      mix != null ||
+      adaptive != null
 
     if (!isForced && fetched.current[type]) return null
 
@@ -96,6 +106,7 @@ export default function StudyPage() {
         difficulty,
         topic_filter,
         mix,
+        adaptive,
       })
       setCache((prev) => ({ ...prev, [type]: data }))
       markUpdated(type)
@@ -117,6 +128,20 @@ export default function StudyPage() {
     await fetchType('quiz', {})
   }, [docId, markUpdated])
 
+  const generateAdaptiveQuiz = useCallback(async () => {
+    setAdaptiveQuizLoading(true)
+    try {
+      const count = cache.quiz?.questions?.length ?? undefined
+      await fetchType('quiz', { adaptive: true, count })
+    } finally {
+      setAdaptiveQuizLoading(false)
+    }
+  }, [cache.quiz?.questions?.length, docId])
+
+  const handleQuizAttemptComplete = useCallback((scorePct) => {
+    setPreviousQuizScorePct(scorePct)
+  }, [])
+
   const handleChatAction = useCallback(
     async (action) => {
       const type = getActionGenerateType(action.type)
@@ -126,6 +151,7 @@ export default function StudyPage() {
         difficulty: action.difficulty,
         topic_filter: action.topic_filter,
         mix: action.mix,
+        adaptive: action.adaptive,
       }
 
       if (isAppendAction(action.type)) {
@@ -220,41 +246,73 @@ export default function StudyPage() {
     }
   }, [activeTab, docId])
 
+  function tabIsReady(tabId) {
+    if (tabId === 'chat') return chatMessages.length > 0
+    if (tabId === 'summary') return cache.summary != null
+    if (tabId === 'flashcards') return cache.flashcards != null
+    if (tabId === 'quiz') return cache.quiz != null
+    return false
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-950 px-3 py-6 text-zinc-100 sm:px-4 sm:py-8">
+    <div className="study-bg page-enter px-3 py-6 sm:px-4 sm:py-8">
       <Toast message={toast} />
 
       <div className="mx-auto max-w-3xl">
         <div className="mb-5 flex items-center justify-between gap-4 sm:mb-6">
-          <h1 className="text-xl font-semibold text-white sm:text-2xl">Study</h1>
-          <Link
-            to="/"
-            className="shrink-0 text-sm font-medium text-zinc-400 transition-colors hover:text-white"
-          >
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h1
+              className="text-xl font-bold sm:text-2xl"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Study
+            </h1>
+            {docFilename && (
+              <span
+                className="truncate text-sm font-normal"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                · {docFilename}
+              </span>
+            )}
+          </div>
+          <Link to="/" className="back-link shrink-0">
             ← Home
           </Link>
         </div>
 
         <div className="-mx-1 overflow-x-auto px-1 pb-1">
-          <div className="flex min-w-max gap-1 rounded-lg bg-zinc-900 p-1 sm:min-w-0">
+          <div className="study-tab-bar min-w-max sm:min-w-0">
             {TABS.map((tab) => {
               const updated = formatLastUpdated(lastUpdated[tab.id])
+              const isActive = activeTab === tab.id
+              const ready = tabIsReady(tab.id)
+
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex min-w-[5.5rem] flex-1 flex-col items-center rounded-md px-3 py-2 transition-colors sm:min-w-0 ${
-                    activeTab === tab.id
-                      ? 'bg-zinc-800 text-white shadow-sm'
-                      : 'text-zinc-500 hover:text-zinc-300'
-                  }`}
+                  className={`study-tab ${isActive ? 'active' : ''}`}
                 >
+                  {tab.id !== 'chat' && (
+                    <span
+                      className={`study-tab-dot ${ready ? 'ready' : 'pending'}`}
+                      aria-hidden="true"
+                    />
+                  )}
                   <span className="whitespace-nowrap text-sm font-medium">
                     {tab.label}
                   </span>
                   {updated && tab.id !== 'chat' && (
-                    <span className="mt-0.5 whitespace-nowrap text-[10px] font-normal text-zinc-500">
+                    <span
+                      className="mt-0.5 whitespace-nowrap text-[10px] font-normal"
+                      style={{
+                        color: isActive
+                          ? 'rgba(255,255,255,0.7)'
+                          : 'var(--text-muted)',
+                      }}
+                    >
                       {updated}
                     </span>
                   )}
@@ -264,7 +322,7 @@ export default function StudyPage() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-xl sm:mt-6 sm:p-6">
+        <div className="content-card mt-4 p-4 shadow-xl sm:mt-6 sm:p-6">
           {activeTab === 'summary' && (
             <SummaryTab
               data={cache.summary}
@@ -278,18 +336,24 @@ export default function StudyPage() {
               data={cache.flashcards}
               loading={loading.flashcards}
               error={errors.flashcards}
+              onGoToQuiz={() => setActiveTab('quiz')}
             />
           )}
 
           {activeTab === 'quiz' && (
             <ErrorBoundary>
               <QuizTab
+                docId={docId}
                 data={cache.quiz}
                 loading={loading.quiz}
                 error={errors.quiz}
                 onStudyWeakTopics={handleStudyWeakTopics}
                 studyWeakLoading={studyWeakLoading}
                 onRegenerate={regenerateQuiz}
+                onAdaptiveQuiz={generateAdaptiveQuiz}
+                adaptiveQuizLoading={adaptiveQuizLoading}
+                previousQuizScorePct={previousQuizScorePct}
+                onAttemptComplete={handleQuizAttemptComplete}
               />
             </ErrorBoundary>
           )}

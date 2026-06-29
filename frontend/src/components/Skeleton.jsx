@@ -1,12 +1,19 @@
 export function SkeletonLine({ className = '' }) {
-  return <div className={`animate-pulse rounded-md bg-zinc-800 ${className}`} />
+  return <div className={`skeleton-shimmer rounded-md ${className}`} />
 }
 
 export function SummarySkeleton() {
   return (
     <div className="space-y-6">
       <SkeletonLine className="h-4 w-48" />
-      <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div
+        className="space-y-3 p-6"
+        style={{
+          borderRadius: 'var(--radius)',
+          border: '1px solid var(--border)',
+          background: 'var(--bg-surface)',
+        }}
+      >
         <SkeletonLine className="h-4 w-full" />
         <SkeletonLine className="h-4 w-full" />
         <SkeletonLine className="h-4 w-5/6" />
@@ -26,7 +33,7 @@ export function FlashcardSkeleton() {
   return (
     <div className="space-y-6">
       <SkeletonLine className="mx-auto h-4 w-20" />
-      <SkeletonLine className="mx-auto h-56 w-full max-w-lg rounded-xl sm:h-64" />
+      <SkeletonLine className="mx-auto h-56 w-full max-w-lg rounded-[18px] sm:h-64" />
       <div className="flex justify-center gap-4">
         <SkeletonLine className="h-10 w-24 rounded-lg" />
         <SkeletonLine className="h-10 w-24 rounded-lg" />
@@ -42,7 +49,7 @@ export function QuizSkeleton() {
       <SkeletonLine className="h-6 w-full max-w-md" />
       <div className="space-y-2">
         {[1, 2, 3, 4].map((i) => (
-          <SkeletonLine key={i} className="h-12 w-full rounded-lg" />
+          <SkeletonLine key={i} className="h-14 w-full rounded-[10px]" />
         ))}
       </div>
     </div>

@@ -8,21 +8,48 @@ const MASTERY = {
   LEARNING: 'learning',
 }
 
-export default function FlashcardsTab({ data, loading, error }) {
+function ChevronLeft() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  )
+}
+
+function ChevronRight() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  )
+}
+
+export default function FlashcardsTab({ data, loading, error, onGoToQuiz }) {
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [mastery, setMastery] = useState({})
   const [reviewWeakOnly, setReviewWeakOnly] = useState(false)
+  const [deckComplete, setDeckComplete] = useState(false)
 
   const allCards = data?.flashcards ?? []
 
-  const displayCards = useMemo(() => {
-    if (!reviewWeakOnly) return allCards
-    return allCards.filter((_, i) => mastery[i] !== MASTERY.KNOWN)
+  const displayIndices = useMemo(() => {
+    if (!reviewWeakOnly) {
+      return allCards.map((_, i) => i)
+    }
+    return allCards
+      .map((_, i) => i)
+      .filter((i) => mastery[i] !== MASTERY.KNOWN)
   }, [allCards, mastery, reviewWeakOnly])
 
+  const displayCards = useMemo(
+    () => displayIndices.map((i) => allCards[i]),
+    [allCards, displayIndices],
+  )
+
   const total = displayCards.length
-  const current = displayCards[index]
+  const current = displayCards[index] ?? null
+  const currentOriginalIndex = displayIndices[index] ?? null
 
   const masteredCount = useMemo(
     () => allCards.filter((_, i) => mastery[i] === MASTERY.KNOWN).length,
@@ -32,29 +59,57 @@ export default function FlashcardsTab({ data, loading, error }) {
   useEffect(() => {
     setIndex(0)
     setFlipped(false)
+    setDeckComplete(false)
   }, [allCards.length, reviewWeakOnly])
 
   useEffect(() => {
     setMastery({})
     setReviewWeakOnly(false)
+    setDeckComplete(false)
   }, [data?.flashcards])
 
+  useEffect(() => {
+    if (displayIndices.length === 0) return
+    if (index >= displayIndices.length) {
+      setIndex(Math.max(0, displayIndices.length - 1))
+    }
+  }, [displayIndices.length, index])
+
   function goTo(newIndex) {
-    setIndex(newIndex)
+    setDeckComplete(false)
+    setIndex(Math.max(0, Math.min(newIndex, total - 1)))
     setFlipped(false)
   }
 
-  function getOriginalIndex(card) {
-    return allCards.indexOf(card)
+  function markCard(status, event) {
+    event?.stopPropagation()
+    event?.preventDefault()
+
+    if (currentOriginalIndex == null || current == null) return
+
+    const onLastCard = index >= total - 1
+
+    setMastery((prev) => ({ ...prev, [currentOriginalIndex]: status }))
+    setFlipped(false)
+
+    if (onLastCard) {
+      setDeckComplete(true)
+      return
+    }
+
+    if (reviewWeakOnly && status === MASTERY.KNOWN) {
+      // Card drops from the filtered list; keep index so the next card slides in.
+      return
+    }
+
+    setIndex((i) => Math.min(i + 1, total - 1))
   }
 
-  function markCard(status) {
-    if (!current) return
-    const originalIndex = getOriginalIndex(current)
-    setMastery((prev) => ({ ...prev, [originalIndex]: status }))
-    if (index < total - 1) {
-      goTo(index + 1)
-    }
+  function handleReviewWeak() {
+    setReviewWeakOnly(true)
+    setIndex(0)
+    setFlipped(false)
+    setDeckComplete(false)
   }
 
   function handleExport() {
@@ -78,7 +133,13 @@ export default function FlashcardsTab({ data, loading, error }) {
 
   if (error) {
     return (
-      <div className="rounded-lg bg-red-950/50 px-4 py-3 text-sm text-red-400">
+      <div
+        className="rounded-lg px-4 py-3 text-sm"
+        style={{
+          background: 'rgba(239, 68, 68, 0.12)',
+          color: 'var(--danger)',
+        }}
+      >
         {error}
       </div>
     )
@@ -90,6 +151,8 @@ export default function FlashcardsTab({ data, loading, error }) {
     ? Math.round((masteredCount / allCards.length) * 100)
     : 0
 
+  const cardProgressPct = total > 0 ? Math.round(((index + 1) / total) * 100) : 0
+
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -97,118 +160,220 @@ export default function FlashcardsTab({ data, loading, error }) {
         <button
           type="button"
           onClick={handleExport}
-          className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+          className="btn-ghost shrink-0 !w-auto px-3 py-1.5 text-xs"
         >
           Export PDF
         </button>
       </div>
 
       <div>
-        <div className="mb-1.5 flex items-center justify-between text-xs text-zinc-400">
+        <div
+          className="mb-1.5 flex items-center justify-between text-xs"
+          style={{ color: 'var(--text-secondary)' }}
+        >
           <span>
             {masteredCount} / {allCards.length} mastered
           </span>
           <span>{progressPct}%</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+        <div className="mastery-bar">
           <div
-            className="h-full rounded-full bg-violet-500 transition-all duration-300"
-            style={{ width: `${progressPct}%` }}
+            className="mastery-bar-fill"
+            style={{
+              width: `${progressPct}%`,
+              background:
+                'linear-gradient(90deg, var(--danger), var(--warning), var(--success))',
+            }}
           />
         </div>
       </div>
 
-      {masteredCount < allCards.length && (
+      {masteredCount < allCards.length && !deckComplete && (
         <button
           type="button"
           onClick={() => {
             setReviewWeakOnly((v) => !v)
             setIndex(0)
             setFlipped(false)
+            setDeckComplete(false)
           }}
-          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+          className="rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150"
+          style={
             reviewWeakOnly
-              ? 'bg-violet-600 text-white'
-              : 'border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-white'
-          }`}
+              ? {
+                  background: 'var(--accent)',
+                  color: 'white',
+                  border: 'none',
+                  boxShadow: '0 0 16px rgba(108, 99, 255, 0.35)',
+                }
+              : {
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border)',
+                }
+          }
         >
           {reviewWeakOnly ? 'Showing weak cards' : 'Review weak cards'}
         </button>
       )}
 
+      {deckComplete && (
+        <div
+          className="rounded-xl px-4 py-4 text-center"
+          style={{
+            background: 'var(--accent-glow)',
+            border: '1px solid var(--border-accent)',
+          }}
+        >
+          <p
+            className="text-sm font-semibold"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            You&apos;ve reviewed all cards!
+          </p>
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            {masteredCount} / {allCards.length} mastered
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            {masteredCount < allCards.length && (
+              <button
+                type="button"
+                onClick={handleReviewWeak}
+                className="btn-ghost !w-auto px-4 py-2 text-sm"
+              >
+                Review weak cards
+              </button>
+            )}
+            {onGoToQuiz && (
+              <button
+                type="button"
+                onClick={onGoToQuiz}
+                className="btn-primary !w-auto px-4 py-2 text-sm"
+              >
+                Go to quiz
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setDeckComplete(false)
+                setIndex(0)
+                setFlipped(false)
+              }}
+              className="btn-ghost !w-auto px-4 py-2 text-sm"
+            >
+              Review again
+            </button>
+          </div>
+        </div>
+      )}
+
       {displayCards.length === 0 ? (
-        <p className="py-12 text-center text-sm text-zinc-400">
+        <p
+          className="py-12 text-center text-sm"
+          style={{ color: 'var(--text-secondary)' }}
+        >
           All cards mastered! 🎉
         </p>
       ) : (
         <>
-          <p className="text-center text-sm text-zinc-400">
-            {index + 1} / {total}
+          <div className="quiz-progress-bar">
+            <div
+              className="quiz-progress-fill"
+              style={{ width: `${cardProgressPct}%` }}
+            />
+          </div>
+
+          <p
+            className="text-center text-sm"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <span className="quiz-counter-pill">
+              {index + 1} / {total}
+            </span>
           </p>
 
           <div className="[perspective:1000px]">
             <button
               type="button"
-              onClick={() => setFlipped((f) => !f)}
-              className="relative mx-auto block h-52 w-full max-w-lg cursor-pointer border-0 bg-transparent p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 sm:h-64"
+              onClick={() => {
+                setDeckComplete(false)
+                setFlipped((f) => !f)
+              }}
+              className="relative mx-auto block min-h-[260px] w-full max-w-lg cursor-pointer border-0 bg-transparent p-0 focus:outline-none sm:min-h-[280px]"
               aria-label={flipped ? 'Show question' : 'Show answer'}
             >
               <div
-                className={`relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d] ${
+                className={`relative h-full min-h-[260px] w-full transition-transform duration-500 [transform-style:preserve-3d] sm:min-h-[280px] ${
                   flipped ? '[transform:rotateY(180deg)]' : ''
                 }`}
               >
-                <div className="absolute inset-0 flex items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 p-4 sm:p-6 [backface-visibility:hidden]">
-                  <p className="text-center text-base font-medium text-zinc-100 sm:text-lg">
-                    {current.question}
+                <div className="flashcard-face absolute inset-0 flex flex-col items-center justify-center p-6 sm:p-8 [backface-visibility:hidden]">
+                  <span className="flashcard-label-q mb-3">Question</span>
+                  <p
+                    className="text-center text-base font-medium sm:text-lg"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {current?.question}
                   </p>
                 </div>
-                <div className="absolute inset-0 flex items-center justify-center rounded-xl border border-zinc-600 bg-zinc-800 p-4 sm:p-6 [backface-visibility:hidden] [transform:rotateY(180deg)]">
-                  <p className="text-center text-base text-zinc-200 sm:text-lg">
-                    {current.answer}
+                <div className="flashcard-face absolute inset-0 flex flex-col items-center justify-center p-6 sm:p-8 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                  <span className="flashcard-label-a mb-3">Answer</span>
+                  <p
+                    className="text-center text-base sm:text-lg"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {current?.answer}
                   </p>
                 </div>
               </div>
             </button>
           </div>
 
-          <p className="text-center text-xs text-zinc-500">Tap card to flip</p>
+          <p
+            className="text-center text-xs"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Tap card to flip
+          </p>
 
-          {flipped && (
+          {flipped && current && (
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
               <button
                 type="button"
-                onClick={() => markCard(MASTERY.LEARNING)}
-                className="flex-1 rounded-lg border border-amber-700/60 bg-amber-950/30 px-4 py-2.5 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-950/50 sm:flex-none"
+                onClick={(e) => markCard(MASTERY.LEARNING, e)}
+                className="btn-learning flex-1 sm:flex-none"
               >
-                Still learning
+                ↻ Still learning
               </button>
               <button
                 type="button"
-                onClick={() => markCard(MASTERY.KNOWN)}
-                className="flex-1 rounded-lg border border-green-700/60 bg-green-950/30 px-4 py-2.5 text-sm font-medium text-green-300 transition-colors hover:bg-green-950/50 sm:flex-none"
+                onClick={(e) => markCard(MASTERY.KNOWN, e)}
+                className="btn-known flex-1 sm:flex-none"
               >
-                I knew this
+                ✓ I knew this
               </button>
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-3 sm:gap-4">
+          <div className="flex items-center justify-center gap-4">
             <button
               type="button"
               onClick={() => goTo(index - 1)}
               disabled={index === 0}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="nav-circle-btn"
+              aria-label="Previous card"
             >
-              Previous
+              <ChevronLeft />
             </button>
             <button
               type="button"
               onClick={() => goTo(index + 1)}
               disabled={index === total - 1}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="nav-circle-btn"
+              aria-label="Next card"
             >
-              Next
+              <ChevronRight />
             </button>
           </div>
         </>
